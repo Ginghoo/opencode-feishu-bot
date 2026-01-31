@@ -47,25 +47,71 @@ bun install
 
 ## 配置
 
-基于 `.env.example` 创建 `.env` 文件：
+创建配置文件 `~/.config/opencode-feishu-bot/config.toml`：
 
 ```bash
-cp .env.example .env
+mkdir -p ~/.config/opencode-feishu-bot
+cp config.toml.example ~/.config/opencode-feishu-bot/config.toml
 ```
 
-配置以下环境变量：
+### 配置文件示例
 
-| 变量 | 说明 | 必填 |
-|------|------|------|
-| `FEISHU_APP_ID` | 飞书开放平台的应用 ID | 是 |
-| `FEISHU_APP_SECRET` | 飞书应用密钥 | 是 |
-| `ADMIN_USER_IDS` | 管理员 open_id 列表（逗号分隔） | 否 |
-| `ALLOW_ALL_USERS` | 是否允许所有用户（默认 `true`，设为 `false` 启用白名单模式） | 否 |
-| `PROJECTS` | 预配置项目列表（格式：`路径:名称,路径:名称`） | 否 |
-| `DATABASE_PATH` | SQLite 数据库路径 | 否（默认：`./data/bot.db`） |
-| `LOG_LEVEL` | 日志级别（debug/info/warn/error） | 否（默认：`info`） |
-| `DEFAULT_MODEL` | 默认模型（格式：`provider/model`） | 否 |
-| `AVAILABLE_MODELS` | 可用模型列表（逗号分隔） | 否 |
+```toml
+[feishu]
+app_id = "cli_xxxxxxxxxxxx"
+app_secret = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+[admin]
+user_ids = ["ou_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+allow_all_users = true
+
+[database]
+# path = "~/.config/opencode-feishu-bot/bot.db"
+
+[logging]
+level = "info"
+
+[[projects]]
+path = "/home/user/project-a"
+name = "项目A"
+
+[[projects]]
+path = "/home/user/project-b"
+name = "项目B"
+
+[models]
+default = "anthropic/claude-sonnet-4-20250514"
+
+[[models.available]]
+id = "anthropic/claude-sonnet-4-20250514"
+name = "Claude Sonnet"
+```
+
+### 配置项说明
+
+| 配置项 | 说明 | 必填 |
+|--------|------|------|
+| `feishu.app_id` | 飞书开放平台的应用 ID | 是 |
+| `feishu.app_secret` | 飞书应用密钥 | 是 |
+| `admin.user_ids` | 管理员 open_id 列表 | 否 |
+| `admin.allow_all_users` | 是否允许所有用户（默认 `true`） | 否 |
+| `database.path` | SQLite 数据库路径 | 否 |
+| `logging.level` | 日志级别（debug/info/warn/error） | 否 |
+| `projects` | 预配置项目列表 | 否 |
+| `models.default` | 默认模型 | 否 |
+| `models.available` | 可用模型列表（留空显示全部） | 否 |
+
+### 环境变量
+
+环境变量可覆盖配置文件中的对应项：
+
+| 变量 | 覆盖配置项 |
+|------|------------|
+| `FEISHU_APP_ID` | `feishu.app_id` |
+| `FEISHU_APP_SECRET` | `feishu.app_secret` |
+| `DATABASE_PATH` | `database.path` |
+| `LOG_LEVEL` | `logging.level` |
+| `DEFAULT_MODEL` | `models.default` |
 
 > **注意**：OpenCode 服务器会随机器人自动启动（随机端口），无需手动配置。
 > 默认项目目录为机器人启动时的**当前工作目录**。

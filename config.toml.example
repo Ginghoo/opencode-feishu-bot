@@ -1,0 +1,42 @@
+# OpenCode 飞书机器人配置文件
+# 将此文件复制到 ~/.config/opencode-feishu-bot/config.toml
+
+[feishu]
+app_id = "cli_xxxxxxxxxxxx"
+app_secret = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+[admin]
+# 管理员用户 open_id 列表
+user_ids = ["ou_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+# 是否允许所有用户（设为 false 启用白名单模式）
+allow_all_users = true
+
+[database]
+# 数据库路径（默认：~/.config/opencode-feishu-bot/bot.db）
+# path = "~/.config/opencode-feishu-bot/bot.db"
+
+[logging]
+# 日志级别：debug | info | warn | error
+level = "info"
+
+# 预配置项目列表
+[[projects]]
+path = "/home/user/project-a"
+name = "项目A"
+
+[[projects]]
+path = "/home/user/project-b"
+name = "项目B"
+
+[models]
+# 默认模型
+default = "anthropic/claude-sonnet-4-20250514"
+
+# 可用模型列表（留空显示全部）
+[[models.available]]
+id = "anthropic/claude-sonnet-4-20250514"
+name = "Claude Sonnet"
+
+[[models.available]]
+id = "openai/gpt-4o"
+name = "GPT-4o"

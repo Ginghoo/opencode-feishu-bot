@@ -59,16 +59,16 @@ async function main(): Promise<void> {
     model: cliOptions.model,
     logLevel,
   });
-  setLogLevel(config.LOG_LEVEL);
+  setLogLevel(config.logLevel);
   
   logger.info('正在启动飞书 OpenCode 机器人...');
   
-  const db = initializeDatabase(config.DATABASE_PATH);
-  logger.info('数据库已初始化', { path: config.DATABASE_PATH });
+  const db = initializeDatabase(config.databasePath);
+  logger.info('数据库已初始化', { path: config.databasePath });
   
   const feishuClient = createFeishuClient({
-    appId: config.FEISHU_APP_ID,
-    appSecret: config.FEISHU_APP_SECRET,
+    appId: config.feishuAppId,
+    appSecret: config.feishuAppSecret,
   });
   
   const defaultProjectPath = getDefaultProjectPath(cliOptions.project);
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
     {
       defaultProjectPath,
       adminUserIds,
-      allowAllUsers: config.ALLOW_ALL_USERS,
+      allowAllUsers: config.allowAllUsers,
     }
   );
   
@@ -148,7 +148,7 @@ async function main(): Promise<void> {
   
   logger.info('飞书 OpenCode 机器人启动成功');
   logger.info('配置信息', {
-    appId: config.FEISHU_APP_ID.substring(0, 8) + '...',
+    appId: config.feishuAppId.substring(0, 8) + '...',
     opencodeUrl,
     defaultProject: defaultProjectPath,
     defaultModel: defaultModel || '(未设置)',

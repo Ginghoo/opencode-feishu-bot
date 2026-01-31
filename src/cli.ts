@@ -162,14 +162,14 @@ export function formatHelp(): string {
   }
   
   lines.push('');
-  lines.push('环境变量:');
-  lines.push('  FEISHU_APP_ID        飞书应用 ID (必需)');
-  lines.push('  FEISHU_APP_SECRET    飞书应用密钥 (必需)');
-  lines.push('  DEFAULT_MODEL        默认模型 (可被 --model 覆盖)');
-  lines.push('  AVAILABLE_MODELS     可用模型列表 (逗号分隔)');
-  lines.push('  PROJECTS             预配置项目列表');
-  lines.push('  DATABASE_PATH        数据库路径 (默认: ./data/bot.db)');
-  lines.push('  LOG_LEVEL            日志级别 (默认: info)');
+  lines.push('配置文件: ~/.config/opencode-feishu-bot/config.toml');
+  lines.push('');
+  lines.push('环境变量 (可覆盖配置文件):');
+  lines.push('  FEISHU_APP_ID        飞书应用 ID');
+  lines.push('  FEISHU_APP_SECRET    飞书应用密钥');
+  lines.push('  DEFAULT_MODEL        默认模型');
+  lines.push('  DATABASE_PATH        数据库路径');
+  lines.push('  LOG_LEVEL            日志级别');
   lines.push('');
   lines.push('示例:');
   lines.push('  # 使用指定模型启动');
