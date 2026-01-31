@@ -3,23 +3,34 @@
   "version": "0.1.0",
   "description": "飞书机器人，用于与 OpenCode AI 编程助手交互",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "bin": {
     "opencode-feishu-bot": "./bin/cli.js"
   },
   "files": [
     "dist",
-    "bin",
-    "src/database/schema.sql"
+    "bin"
   ],
   "scripts": {
     "start": "bun run src/index.ts",
     "dev": "bun --watch src/index.ts",
-    "build": "bun build ./src/index.ts --outdir ./dist --target node && cp src/database/schema.sql dist/database/",
+    "build": "bun run build:clean && bun run build:js && bun run build:types && bun run build:assets",
+    "build:clean": "rm -rf dist",
+    "build:js": "bun build ./src/index.ts --outdir ./dist --target node --format esm --packages external",
+    "build:types": "bunx tsc -p tsconfig.build.json",
+    "build:assets": "mkdir -p dist/database && cp src/database/schema.sql dist/database/",
     "test": "bun test",
     "test:watch": "bun test --watch",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "bun run build",
+    "prepack": "bun run build"
   },
   "keywords": [
     "feishu",
@@ -34,16 +45,26 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git+https://github.com/kylin1020/opencode-feishu-bot.git"
   },
+  "bugs": {
+    "url": "https://github.com/kylin1020/opencode-feishu-bot/issues"
+  },
+  "homepage": "https://github.com/kylin1020/opencode-feishu-bot#readme",
   "engines": {
-    "node": ">=18.0.0"
+    "bun": ">=1.2.0"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "typescript": "^5"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.58.0",
