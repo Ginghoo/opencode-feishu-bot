@@ -1,0 +1,53 @@
+{
+  "name": "opencode-feishu-bot",
+  "version": "0.1.0",
+  "description": "飞书机器人，用于与 OpenCode AI 编程助手交互",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "opencode-feishu-bot": "./bin/cli.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "src/database/schema.sql"
+  ],
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch src/index.ts",
+    "build": "bun build ./src/index.ts --outdir ./dist --target node && cp src/database/schema.sql dist/database/",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "feishu",
+    "lark",
+    "飞书",
+    "opencode",
+    "ai",
+    "chatbot",
+    "bot"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.58.0",
+    "@opencode-ai/sdk": "^1.1.47",
+    "zod": "^4.3.6"
+  }
+}
