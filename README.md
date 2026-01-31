@@ -38,7 +38,7 @@ bun add -g opencode-feishu-bot
 
 ```bash
 # 克隆仓库
-git clone <repository-url>
+git clone https://github.com/kylin1020/opencode-feishu-bot.git
 cd opencode-feishu-bot
 
 # 安装依赖
