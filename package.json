@@ -1,5 +1,5 @@
 {
-  "name": "opencode-feishu-bot",
+  "name": "opencode-bot",
   "version": "0.1.2",
   "description": "飞书机器人，用于与 OpenCode AI 编程助手交互",
   "type": "module",
@@ -13,7 +13,7 @@
     }
   },
   "bin": {
-    "opencode-feishu-bot": "./bin/cli.js"
+    "opencode-bot": "./bin/cli.js"
   },
   "files": [
     "dist",
@@ -46,12 +46,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kylin1020/opencode-feishu-bot.git"
+    "url": "git+https://github.com/kylin1020/opencode-bot.git"
   },
   "bugs": {
-    "url": "https://github.com/kylin1020/opencode-feishu-bot/issues"
+    "url": "https://github.com/kylin1020/opencode-bot/issues"
   },
-  "homepage": "https://github.com/kylin1020/opencode-feishu-bot#readme",
+  "homepage": "https://github.com/kylin1020/opencode-bot#readme",
   "engines": {
     "bun": ">=1.2.0"
   },

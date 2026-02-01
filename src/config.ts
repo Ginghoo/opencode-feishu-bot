@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { parse as parseToml } from 'smol-toml';
 
-export const CONFIG_DIR = join(homedir(), '.config', 'opencode-feishu-bot');
+export const CONFIG_DIR = join(homedir(), '.config', 'opencode-bot');
 export const CONFIG_FILE = join(CONFIG_DIR, 'config.toml');
 export const DEFAULT_DATABASE_PATH = join(CONFIG_DIR, 'bot.db');
 
