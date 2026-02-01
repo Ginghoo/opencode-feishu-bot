@@ -23,6 +23,59 @@ export interface DocsConfig {
   wikiSpaceId?: string;
 }
 
+interface TomlAgentConfig {
+  id: string;
+  type: string;
+  name?: string;
+  enabled?: boolean;
+  options?: Record<string, unknown>;
+}
+
+interface TomlBindingConfig {
+  id: string;
+  name?: string;
+  agent_id: string;
+  priority?: number;
+  enabled?: boolean;
+  match?: {
+    channel_id?: string | string[];
+    channel_type?: string | string[];
+    chat_type?: 'private' | 'group' | '*';
+    chat_id?: string | string[];
+    user_id?: string | string[];
+    message_pattern?: string;
+  };
+}
+
+interface TomlMcpClientConfig {
+  name: string;
+  command?: string;
+  args?: string[];
+  url?: string;
+  env?: Record<string, string>;
+}
+
+interface TomlMcpConfig {
+  servers?: Record<string, { enabled?: boolean }>;
+  clients?: TomlMcpClientConfig[];
+}
+
+interface TomlHookConfig {
+  enabled?: boolean;
+  handlers?: Array<{
+    event: string;
+    path: string;
+    priority?: number;
+  }>;
+}
+
+interface TomlPluginConfig {
+  enabled?: boolean;
+  workspace_path?: string;
+  managed_path?: string;
+  bundled?: string[];
+}
+
 interface TomlConfig {
   feishu?: {
     app_id?: string;
@@ -53,7 +106,75 @@ interface TomlConfig {
       name?: string;
     }>;
   };
+  agents?: TomlAgentConfig[];
+  bindings?: {
+    default_agent?: string;
+    rules?: TomlBindingConfig[];
+  };
+  mcp?: TomlMcpConfig;
+  hooks?: TomlHookConfig;
+  plugins?: TomlPluginConfig;
 }
+
+const agentConfigSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  name: z.string().optional(),
+  enabled: z.boolean().default(true),
+  options: z.record(z.string(), z.unknown()).optional(),
+});
+
+const bindingMatchSchema = z.object({
+  channelId: z.union([z.string(), z.array(z.string())]).optional(),
+  channelType: z.union([z.string(), z.array(z.string())]).optional(),
+  chatType: z.enum(['private', 'group', '*']).optional(),
+  chatId: z.union([z.string(), z.array(z.string())]).optional(),
+  userId: z.union([z.string(), z.array(z.string())]).optional(),
+  messagePattern: z.string().optional(),
+});
+
+const bindingConfigSchema = z.object({
+  id: z.string(),
+  name: z.string().optional(),
+  agentId: z.string(),
+  priority: z.number().default(0),
+  enabled: z.boolean().default(true),
+  match: bindingMatchSchema.optional(),
+});
+
+const mcpClientConfigSchema = z.object({
+  name: z.string(),
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  url: z.string().optional(),
+  env: z.record(z.string(), z.string()).optional(),
+});
+
+const mcpConfigSchema = z.object({
+  servers: z.record(z.string(), z.object({ enabled: z.boolean().default(true) })).default({}),
+  clients: z.array(mcpClientConfigSchema).default([]),
+});
+
+const hookConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  handlers: z.array(z.object({
+    event: z.string(),
+    path: z.string(),
+    priority: z.number().default(0),
+  })).default([]),
+});
+
+const pluginConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  workspacePath: z.string().optional(),
+  managedPath: z.string().optional(),
+  bundled: z.array(z.string()).default([]),
+});
+
+const bindingsConfigSchema = z.object({
+  defaultAgent: z.string().default('opencode'),
+  rules: z.array(bindingConfigSchema).default([]),
+});
 
 const configSchema = z.object({
   feishuAppId: z.string().min(1, '必须提供飞书应用 ID'),
@@ -75,6 +196,11 @@ const configSchema = z.object({
     defaultFolderToken: z.string().optional(),
     wikiSpaceId: z.string().optional(),
   }).default({}),
+  agents: z.array(agentConfigSchema).default([]),
+  bindings: bindingsConfigSchema.default({ defaultAgent: 'opencode', rules: [] }),
+  mcp: mcpConfigSchema.default({ servers: {}, clients: [] }),
+  hooks: hookConfigSchema.default({ enabled: true, handlers: [] }),
+  plugins: pluginConfigSchema.default({ enabled: true, bundled: [] }),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -124,6 +250,55 @@ export function loadConfig(overrides?: CliOverrides): Config {
     docs: {
       defaultFolderToken: process.env.FEISHU_DEFAULT_FOLDER_TOKEN || toml.feishu?.docs?.default_folder_token,
       wikiSpaceId: process.env.FEISHU_WIKI_SPACE_ID || toml.feishu?.docs?.wiki_space_id,
+    },
+    agents: toml.agents?.map(a => ({
+      id: a.id,
+      type: a.type,
+      name: a.name,
+      enabled: a.enabled ?? true,
+      options: a.options,
+    })) || [],
+    bindings: {
+      defaultAgent: toml.bindings?.default_agent || 'opencode',
+      rules: toml.bindings?.rules?.map(r => ({
+        id: r.id,
+        name: r.name,
+        agentId: r.agent_id,
+        priority: r.priority ?? 0,
+        enabled: r.enabled ?? true,
+        match: r.match ? {
+          channelId: r.match.channel_id,
+          channelType: r.match.channel_type,
+          chatType: r.match.chat_type,
+          chatId: r.match.chat_id,
+          userId: r.match.user_id,
+          messagePattern: r.match.message_pattern,
+        } : undefined,
+      })) || [],
+    },
+    mcp: {
+      servers: toml.mcp?.servers || {},
+      clients: toml.mcp?.clients?.map(c => ({
+        name: c.name,
+        command: c.command,
+        args: c.args,
+        url: c.url,
+        env: c.env,
+      })) || [],
+    },
+    hooks: {
+      enabled: toml.hooks?.enabled ?? true,
+      handlers: toml.hooks?.handlers?.map(h => ({
+        event: h.event,
+        path: h.path,
+        priority: h.priority ?? 0,
+      })) || [],
+    },
+    plugins: {
+      enabled: toml.plugins?.enabled ?? true,
+      workspacePath: toml.plugins?.workspace_path,
+      managedPath: toml.plugins?.managed_path,
+      bundled: toml.plugins?.bundled || [],
     },
   };
   
@@ -210,4 +385,24 @@ export function filterModels<T extends { id: string; name: string }>(
 
 export function getDocsConfig(config: Config): DocsConfig {
   return config.docs;
+}
+
+export function getAgentsConfig(config: Config) {
+  return config.agents;
+}
+
+export function getBindingsConfig(config: Config) {
+  return config.bindings;
+}
+
+export function getMcpConfig(config: Config) {
+  return config.mcp;
+}
+
+export function getHooksConfig(config: Config) {
+  return config.hooks;
+}
+
+export function getPluginsConfig(config: Config) {
+  return config.plugins;
 }

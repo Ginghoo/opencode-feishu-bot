@@ -1,5 +1,5 @@
-# OpenCode 飞书机器人配置文件
-# 将此文件复制到 ~/.config/opencode-feishu-bot/config.toml
+# OpenCode Bot 配置文件
+# 将此文件复制到 ~/.config/opencode-bot/config.toml
 
 [feishu]
 app_id = "cli_xxxxxxxxxxxx"
@@ -18,8 +18,8 @@ user_ids = ["ou_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
 allow_all_users = true
 
 [database]
-# 数据库路径（默认：~/.config/opencode-feishu-bot/bot.db）
-# path = "~/.config/opencode-feishu-bot/bot.db"
+# 数据库路径（默认：~/.config/opencode-bot/bot.db）
+# path = "~/.config/opencode-bot/bot.db"
 
 [logging]
 # 日志级别：debug | info | warn | error
@@ -46,3 +46,59 @@ name = "Claude Sonnet"
 [[models.available]]
 id = "openai/gpt-4o"
 name = "GPT-4o"
+
+# ============================================
+# 新架构配置（可选）
+# ============================================
+
+# Agent 配置
+# [[agents]]
+# id = "opencode"
+# type = "opencode"
+# name = "OpenCode Agent"
+# enabled = true
+# [agents.options]
+# key = "value"
+
+# Bindings 路由配置
+[bindings]
+default_agent = "opencode"
+
+# 路由规则示例
+# [[bindings.rules]]
+# id = "vip-users"
+# name = "VIP 用户路由"
+# agent_id = "premium-agent"
+# priority = 10
+# enabled = true
+# [bindings.rules.match]
+# user_id = ["ou_xxx", "ou_yyy"]
+
+# MCP 配置
+[mcp]
+# 内置 MCP Server 启用状态
+[mcp.servers]
+# feishu = { enabled = true }
+
+# 外部 MCP Client 配置
+# [[mcp.clients]]
+# name = "external-mcp"
+# command = "npx"
+# args = ["-y", "@example/mcp-server"]
+# [mcp.clients.env]
+# API_KEY = "xxx"
+
+# Hook 配置
+[hooks]
+enabled = true
+# [[hooks.handlers]]
+# event = "message.received"
+# path = "./hooks/log-message.ts"
+# priority = 0
+
+# Plugin 配置
+[plugins]
+enabled = true
+# workspace_path = "./plugins"
+# managed_path = "~/.config/opencode-bot/plugins"
+# bundled = ["example-plugin"]
