@@ -45,12 +45,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kylin1020/opencode-bot.git"
+    "url": "git+https://github.com/ginghoo/opencode-feishu-bot.git"
   },
   "bugs": {
-    "url": "https://github.com/kylin1020/opencode-bot/issues"
+    "url": "https://github.com/ginghoo/opencode-feishu-bot/issues"
   },
-  "homepage": "https://github.com/kylin1020/opencode-bot#readme",
+  "homepage": "https://github.com/ginghoo/opencode-feishu-bot#readme",
   "engines": {
     "bun": ">=1.2.0"
   },
