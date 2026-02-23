@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import type { FeishuChannel } from '../channels/feishu';
 import type { OpencodeAgent } from '../agent/opencode';
 import type { ProjectConfig, ModelConfig } from '../config';
@@ -179,6 +180,10 @@ export class CommandHandler {
     }
 
     const project = this.config.projects[index]!;
+    if (!existsSync(project.path)) {
+      await this.sendMessage(context.chatId, formatCommandError(`项目路径不存在: ${project.path}`));
+      return { handled: true };
+    }
     if (project.path === session.projectPath) {
       await this.sendMessage(context.chatId, `已经在项目 ${project.name} 中`);
       return { handled: true };

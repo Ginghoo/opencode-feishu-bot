@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { loadConfig, getAdminUserIds, getDefaultProjectPath, getProjects, getAvailableModels, getDefaultModel, getMcpConfig } from './config';
 import { parseArgs, formatHelp, getVersion, isValidLogLevel } from './cli';
 import { logger, setLogLevel } from './utils/logger';
@@ -66,8 +67,21 @@ async function main(): Promise<void> {
   
   logger.info('正在启动飞书 OpenCode 机器人...');
   
-  const projects = getProjects(config);
-  const defaultProjectPath = cliOptions.project || projects[0]?.path || getDefaultProjectPath();
+  const allProjects = getProjects(config);
+  const validProjects = allProjects.filter(p => {
+    if (existsSync(p.path)) return true;
+    logger.warn('项目路径不存在，已跳过', { name: p.name, path: p.path });
+    return false;
+  });
+  const projects = validProjects;
+  const configuredDefault = cliOptions.project || projects[0]?.path || getDefaultProjectPath();
+  const defaultProjectPath = existsSync(configuredDefault) ? configuredDefault : process.cwd();
+  if (defaultProjectPath !== configuredDefault) {
+    logger.warn('配置的默认项目路径不存在，已 fallback 到当前工作目录', {
+      configured: configuredDefault,
+      fallback: defaultProjectPath,
+    });
+  }
   const defaultModel = getDefaultModel(config);
   const adminUserIds = getAdminUserIds(config);
   const availableModels = getAvailableModels(config);
@@ -294,38 +308,49 @@ async function main(): Promise<void> {
     adminCount: adminUserIds.length,
   });
 
-  // 发送启动通知
+  // 发送启动通知（延迟 2s 确保飞书 WebSocket 完全就绪）
   if (config.notifyUserId) {
-    const isExternal = !!config.opencodeUrl;
-    const statusCard = {
-      config: { wide_screen_mode: true },
-      header: {
-        title: { tag: 'plain_text', content: 'OpenCode Bot 已启动' },
-        template: 'green',
-      },
-      elements: [
-        {
-          tag: 'markdown',
-          content: [
-            `**服务状态：** 运行中`,
-            `**OpenCode：** ${isExternal ? `已连接桌面应用 (${opencodeUrl})` : `独立服务 (${opencodeUrl})`}`,
-            `**默认项目：** \`${defaultProjectPath}\``,
-            `**默认模型：** \`${defaultModel || '未设置'}\``,
-            `**启动时间：** ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
-          ].join('\n'),
+    const sendStartupNotification = async () => {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const isExternal = !!config.opencodeUrl;
+      const skippedProjects = allProjects.length - validProjects.length;
+      const projectInfo = skippedProjects > 0
+        ? `\`${defaultProjectPath}\` (${skippedProjects} 个配置路径不存在)`
+        : `\`${defaultProjectPath}\``;
+      const statusCard = {
+        config: { wide_screen_mode: true },
+        header: {
+          title: { tag: 'plain_text', content: 'OpenCode Bot 已启动' },
+          template: 'green',
         },
-        {
-          tag: 'note',
-          elements: [{ tag: 'plain_text', content: '发送 /help 查看可用命令 | /status 查看会话状态' }],
-        },
-      ],
+        elements: [
+          {
+            tag: 'markdown',
+            content: [
+              `**服务状态：** 运行中`,
+              `**OpenCode：** ${isExternal ? `已连接桌面应用 (${opencodeUrl})` : `独立服务 (${opencodeUrl})`}`,
+              `**默认项目：** ${projectInfo}`,
+              `**可用项目：** ${validProjects.length > 0 ? validProjects.map(p => p.name).join(', ') : '(无)'}`,
+              `**默认模型：** \`${defaultModel || '未设置'}\``,
+              `**启动时间：** ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
+            ].join('\n'),
+          },
+          {
+            tag: 'note',
+            elements: [{ tag: 'plain_text', content: '发送 /help 查看可用命令 | /status 查看会话状态' }],
+          },
+        ],
+      };
+      try {
+        await channel.sendCardToUser(config.notifyUserId, statusCard);
+        logger.info('已发送启动通知', { userId: config.notifyUserId });
+      } catch (err) {
+        logger.warn('发送启动通知失败', { error: err });
+      }
     };
-    try {
-      await channel.sendCardToUser(config.notifyUserId, statusCard);
-      logger.info('已发送启动通知', { userId: config.notifyUserId });
-    } catch (err) {
-      logger.warn('发送启动通知失败', { error: err });
-    }
+    sendStartupNotification();
+  } else {
+    logger.info('未配置 notify_user_id，跳过启动通知');
   }
   
   const shutdown = async (signal: string) => {
