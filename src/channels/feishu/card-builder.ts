@@ -64,7 +64,7 @@ export class CardBuilder {
         case 'text':
           elements.push({
             tag: 'markdown',
-            content: block.content,
+            content: this.adaptMarkdownForFeishu(block.content),
           });
           break;
 
@@ -161,6 +161,16 @@ export class CardBuilder {
       case 'failed': return '❌';
       default: return '🔧';
     }
+  }
+
+  /** 将标准 Markdown 转换为飞书卡片兼容格式 */
+  private adaptMarkdownForFeishu(content: string): string {
+    return content
+      // 将 # 标题转换为粗体（飞书卡片不支持标题语法）
+      .replace(/^#{1,6}\s+(.+)$/gm, '**$1**')
+      // 将 HTML 标签移除（飞书不支持）
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/?[^>]+>/g, '');
   }
 
   private truncate(text: string, maxLength: number): string {

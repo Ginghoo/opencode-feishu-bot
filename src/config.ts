@@ -87,6 +87,7 @@ interface TomlConfig {
   admin?: {
     user_ids?: string[];
     allow_all_users?: boolean;
+    notify_user_id?: string;
   };
   database?: {
     path?: string;
@@ -98,6 +99,12 @@ interface TomlConfig {
     path: string;
     name?: string;
   }>;
+  opencode?: {
+    url?: string;
+    port?: number;
+    username?: string;
+    password?: string;
+  };
   models?: {
     default?: string;
     available?: Array<{
@@ -180,12 +187,17 @@ const configSchema = z.object({
   feishuAppSecret: z.string().min(1, '必须提供飞书应用密钥'),
   adminUserIds: z.array(z.string()).default([]),
   allowAllUsers: z.boolean().default(true),
+  notifyUserId: z.string().optional(),
   databasePath: z.string().optional(),
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   projects: z.array(z.object({
     path: z.string(),
     name: z.string(),
   })).default([]),
+  opencodeUrl: z.string().optional(),
+  opencodePort: z.number().optional(),
+  opencodeUsername: z.string().optional(),
+  opencodePassword: z.string().optional(),
   defaultModel: z.string().optional(),
   availableModels: z.array(z.object({
     id: z.string(),
@@ -238,11 +250,16 @@ export function loadConfig(overrides?: CliOverrides): Config {
     allowAllUsers: process.env.ALLOW_ALL_USERS !== undefined
       ? process.env.ALLOW_ALL_USERS !== 'false'
       : toml.admin?.allow_all_users ?? true,
+    notifyUserId: process.env.NOTIFY_USER_ID || toml.admin?.notify_user_id,
     logLevel: overrides?.logLevel || process.env.LOG_LEVEL || toml.logging?.level || 'info',
     projects: toml.projects?.map(p => ({
       path: p.path,
       name: p.name || p.path,
     })) || [],
+    opencodeUrl: process.env.OPENCODE_URL || toml.opencode?.url,
+    opencodePort: toml.opencode?.port,
+    opencodeUsername: process.env.OPENCODE_SERVER_USERNAME || toml.opencode?.username,
+    opencodePassword: process.env.OPENCODE_SERVER_PASSWORD || toml.opencode?.password,
     defaultModel: overrides?.model || process.env.DEFAULT_MODEL || toml.models?.default,
     availableModels: toml.models?.available || [],
     docs: {

@@ -66,10 +66,10 @@ async function main(): Promise<void> {
   
   logger.info('正在启动飞书 OpenCode 机器人...');
   
-  const defaultProjectPath = getDefaultProjectPath(cliOptions.project);
+  const projects = getProjects(config);
+  const defaultProjectPath = cliOptions.project || projects[0]?.path || getDefaultProjectPath();
   const defaultModel = getDefaultModel(config);
   const adminUserIds = getAdminUserIds(config);
-  const projects = getProjects(config);
   const availableModels = getAvailableModels(config);
   
   const mcpHub = new McpHub();
@@ -82,6 +82,10 @@ async function main(): Promise<void> {
   
   const agent = new OpencodeAgent({
     directory: defaultProjectPath,
+    serverUrl: config.opencodeUrl,
+    port: config.opencodePort,
+    username: config.opencodeUsername,
+    password: config.opencodePassword,
   });
   
   const gateway = new Gateway({
@@ -145,12 +149,27 @@ async function main(): Promise<void> {
     adminUserIds,
   });
   
+  // 消息去重：防止飞书 WebSocket 重发导致重复处理
+  const processedMessages = new Set<string>();
+  const DEDUP_TTL_MS = 60_000;
+
   channel.on('message', async (event) => {
     const msgEvent = event as MessageEvent;
     const { chatId, senderId, content } = msgEvent;
-    
+
+    // 使用 messageId 去重
+    const deduplicationKey = msgEvent.messageId || msgEvent.eventId || '';
+    if (deduplicationKey && processedMessages.has(deduplicationKey)) {
+      logger.debug('跳过重复消息', { deduplicationKey });
+      return;
+    }
+    if (deduplicationKey) {
+      processedMessages.add(deduplicationKey);
+      setTimeout(() => processedMessages.delete(deduplicationKey), DEDUP_TTL_MS);
+    }
+
     logger.debug('收到消息', { chatId, senderId, type: msgEvent.messageType });
-    
+
     const text = content || '';
     
     if (isCommand(text)) {
@@ -170,12 +189,12 @@ async function main(): Promise<void> {
     }
     
     try {
-      const session = commandHandler.getSession(chatId);
-      
+      const session = commandHandler.getSession(chatId, senderId);
+
       let sessionId = session.sessionId;
       if (!sessionId) {
         sessionId = await agent.createSession(session.projectPath, session.model);
-        commandHandler.setSessionId(chatId, sessionId);
+        commandHandler.setSessionId(chatId, senderId, sessionId);
       }
       
       const initialReply = createReply('pending', [{ type: 'text', content: '正在思考...' }]);
@@ -183,27 +202,67 @@ async function main(): Promise<void> {
       
       let fullContent = '';
       let thinkingContent = '';
-      
+      const startTime = Date.now();
+      let lastUpdateTime = 0;
+      let pendingUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+      const THROTTLE_MS = 600;
+
+      const throttledUpdate = async () => {
+        lastUpdateTime = Date.now();
+        const streamingReply = createReply('streaming', [{ type: 'text', content: fullContent }], thinkingContent);
+        await channel.updateMessage(messageId, streamingReply);
+      };
+
       const unsubscribe = agent.subscribe(sessionId, async (agentEvent) => {
         try {
           switch (agentEvent.type) {
             case 'thinking.delta':
               thinkingContent += agentEvent.delta;
               break;
-              
+
             case 'message.delta':
               fullContent += agentEvent.delta;
-              const streamingReply = createReply('streaming', [{ type: 'text', content: fullContent }], thinkingContent);
-              await channel.updateMessage(messageId, streamingReply);
+              const now = Date.now();
+              if (now - lastUpdateTime >= THROTTLE_MS) {
+                if (pendingUpdateTimer) {
+                  clearTimeout(pendingUpdateTimer);
+                  pendingUpdateTimer = null;
+                }
+                await throttledUpdate();
+              } else if (!pendingUpdateTimer) {
+                pendingUpdateTimer = setTimeout(async () => {
+                  pendingUpdateTimer = null;
+                  await throttledUpdate();
+                }, THROTTLE_MS - (now - lastUpdateTime));
+              }
               break;
-              
+
             case 'message.complete':
-              const completeReply = createReply('completed', [{ type: 'text', content: fullContent }], thinkingContent);
+              if (pendingUpdateTimer) {
+                clearTimeout(pendingUpdateTimer);
+                pendingUpdateTimer = null;
+              }
+              const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+              const usage = agentEvent.usage;
+              let footer = `⏱ ${duration}s`;
+              if (usage && (usage.inputTokens || usage.outputTokens)) {
+                const total = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+                footer += `  |  📊 ${total.toLocaleString()} tokens (↑${(usage.inputTokens ?? 0).toLocaleString()} ↓${(usage.outputTokens ?? 0).toLocaleString()})`;
+              }
+              if (session.model) {
+                const modelName = session.model.split('/').pop() ?? session.model;
+                footer += `  |  🤖 ${modelName}`;
+              }
+              const completeReply = createReply('completed', [{ type: 'text', content: fullContent + `\n\n---\n${footer}` }], thinkingContent);
               await channel.updateMessage(messageId, completeReply);
               unsubscribe();
               break;
-              
+
             case 'error':
+              if (pendingUpdateTimer) {
+                clearTimeout(pendingUpdateTimer);
+                pendingUpdateTimer = null;
+              }
               const errorReply = createReply('error', [{ type: 'error', message: agentEvent.message }]);
               await channel.updateMessage(messageId, errorReply);
               unsubscribe();
@@ -234,6 +293,40 @@ async function main(): Promise<void> {
     defaultModel: defaultModel || '(未设置)',
     adminCount: adminUserIds.length,
   });
+
+  // 发送启动通知
+  if (config.notifyUserId) {
+    const isExternal = !!config.opencodeUrl;
+    const statusCard = {
+      config: { wide_screen_mode: true },
+      header: {
+        title: { tag: 'plain_text', content: 'OpenCode Bot 已启动' },
+        template: 'green',
+      },
+      elements: [
+        {
+          tag: 'markdown',
+          content: [
+            `**服务状态：** 运行中`,
+            `**OpenCode：** ${isExternal ? `已连接桌面应用 (${opencodeUrl})` : `独立服务 (${opencodeUrl})`}`,
+            `**默认项目：** \`${defaultProjectPath}\``,
+            `**默认模型：** \`${defaultModel || '未设置'}\``,
+            `**启动时间：** ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
+          ].join('\n'),
+        },
+        {
+          tag: 'note',
+          elements: [{ tag: 'plain_text', content: '发送 /help 查看可用命令 | /status 查看会话状态' }],
+        },
+      ],
+    };
+    try {
+      await channel.sendCardToUser(config.notifyUserId, statusCard);
+      logger.info('已发送启动通知', { userId: config.notifyUserId });
+    } catch (err) {
+      logger.warn('发送启动通知失败', { error: err });
+    }
+  }
   
   const shutdown = async (signal: string) => {
     logger.info(`收到 ${signal} 信号，正在关闭...`);

@@ -21,8 +21,8 @@ const COMMAND_PREFIX = '/';
 export const COMMANDS: Record<string, Command> = {
   new: {
     name: 'new',
-    description: '创建新会话（从预配置项目中选择）',
-    usage: '/new <项目编号>',
+    description: '在当前项目中创建新会话',
+    usage: '/new',
     adminOnly: false,
   },
   model: {
@@ -49,16 +49,10 @@ export const COMMANDS: Record<string, Command> = {
     usage: '/exit',
     adminOnly: false,
   },
-  switch_project: {
-    name: 'switch_project',
-    description: '切换到不同的项目目录',
-    usage: '/switch_project <路径>',
-    adminOnly: false,
-  },
-  new_session: {
-    name: 'new_session',
-    description: '创建新的 OpenCode 会话',
-    usage: '/new_session',
+  project: {
+    name: 'project',
+    description: '查看和切换项目目录',
+    usage: '/project [编号]',
     adminOnly: false,
   },
   help: {
@@ -96,6 +90,18 @@ export const COMMANDS: Record<string, Command> = {
     description: '列出所有白名单用户',
     usage: '/whitelist_list',
     adminOnly: true,
+  },
+  sessions: {
+    name: 'sessions',
+    description: '查看历史会话列表，选择编号可切换会话',
+    usage: '/sessions [编号]',
+    adminOnly: false,
+  },
+  myid: {
+    name: 'myid',
+    description: '显示你的飞书用户 ID（用于配置通知等）',
+    usage: '/myid',
+    adminOnly: false,
   },
   doc_read: {
     name: 'doc_read',

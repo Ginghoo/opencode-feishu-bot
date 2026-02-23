@@ -9,6 +9,14 @@ import { logger } from '../utils/logger';
 /** OpenCode 配置 */
 export interface OpencodeConfig {
   directory?: string;
+  /** 已有 OpenCode 服务器的 URL，设置后将连接已有服务器而不是启动新的 */
+  serverUrl?: string;
+  /** 自启动服务器的端口号，默认随机 */
+  port?: number;
+  /** Basic Auth 用户名，默认 opencode */
+  username?: string;
+  /** Basic Auth 密码 */
+  password?: string;
 }
 
 /** OpenCode 事件数据 */
@@ -31,22 +39,46 @@ export class OpencodeWrapper {
   private serverCloseFn: (() => void) | null = null;
   private serverUrl: string | null = null;
   private directory?: string;
+  private externalServerUrl?: string;
+  private port: number;
+  private authHeader?: string;
 
   constructor(config: OpencodeConfig) {
     this.directory = config.directory;
+    this.externalServerUrl = config.serverUrl;
+    this.port = config.port || 0;
+    if (config.password) {
+      const username = config.username || 'opencode';
+      this.authHeader = `Basic ${Buffer.from(`${username}:${config.password}`).toString('base64')}`;
+    }
   }
 
-  /** 启动 OpenCode 服务器（随机端口） */
+  /** 启动或连接 OpenCode 服务器 */
   async start(): Promise<string> {
     if (this.client) {
       logger.warn('OpenCode 已启动');
       return this.serverUrl!;
     }
 
-    logger.info('正在启动 OpenCode 服务器...');
-    
+    if (this.externalServerUrl) {
+      // 连接已有的 OpenCode 服务器（如桌面应用）
+      logger.info('正在连接已有 OpenCode 服务器...', { url: this.externalServerUrl });
+      const clientConfig: Record<string, unknown> = { baseUrl: this.externalServerUrl };
+      if (this.authHeader) {
+        clientConfig.headers = { Authorization: this.authHeader };
+        logger.info('使用 Basic Auth 认证');
+      }
+      this.client = createOpencodeClient(clientConfig as any);
+      this.serverUrl = this.externalServerUrl;
+      logger.info('已连接到 OpenCode 服务器', { url: this.serverUrl });
+      return this.serverUrl;
+    }
+
+    // 启动新的 OpenCode 服务器
+    logger.info('正在启动 OpenCode 服务器...', { port: this.port || '随机' });
+
     const { client, server } = await createOpencode({
-      port: 0, // 随机端口
+      port: this.port,
     });
 
     this.client = client;
@@ -66,6 +98,11 @@ export class OpencodeWrapper {
       this.client = null;
       this.serverUrl = null;
       logger.info('OpenCode 服务器已停止');
+    } else if (this.externalServerUrl) {
+      // 连接外部服务器时只清理客户端引用
+      this.client = null;
+      this.serverUrl = null;
+      logger.info('已断开与 OpenCode 服务器的连接');
     }
   }
 
@@ -87,10 +124,10 @@ export class OpencodeWrapper {
   }
 
   /** 创建新会话 */
-  async createSession(): Promise<string> {
+  async createSession(directory?: string): Promise<string> {
     const client = this.ensureClient();
     const response = await client.session.create({
-      query: { directory: this.directory },
+      query: { directory: directory || this.directory },
     });
     
     if (!response.data) {
@@ -101,10 +138,10 @@ export class OpencodeWrapper {
   }
 
   /** 发送提示消息 */
-  async sendPrompt(sessionId: string, prompt: string, images?: ImageAttachment[], model?: { providerID: string; modelID: string }): Promise<void> {
+  async sendPrompt(sessionId: string, prompt: string, images?: ImageAttachment[], model?: { providerID: string; modelID: string }, directory?: string): Promise<void> {
     const client = this.ensureClient();
-    
-    logger.info('OpenCode sendPrompt', { sessionId, model, hasImages: images && images.length > 0 });
+
+    logger.info('OpenCode sendPrompt', { sessionId, model, directory: directory || this.directory, hasImages: images && images.length > 0 });
     
     const parts: Array<
       | { type: 'text'; text: string }
@@ -128,18 +165,18 @@ export class OpencodeWrapper {
     
     await client.session.promptAsync({
       path: { id: sessionId },
-      query: { directory: this.directory },
+      query: { directory: directory || this.directory },
       body: { parts, model },
     });
   }
 
   /** 中止会话 */
-  async abortSession(sessionId: string): Promise<boolean> {
+  async abortSession(sessionId: string, directory?: string): Promise<boolean> {
     try {
       const client = this.ensureClient();
       await client.session.abort({
         path: { id: sessionId },
-        query: { directory: this.directory },
+        query: { directory: directory || this.directory },
       });
       return true;
     } catch (error) {
@@ -150,15 +187,16 @@ export class OpencodeWrapper {
 
   /** 订阅事件流 */
   async subscribeToEvents(
-    sessionId: string, 
-    callback: EventCallback
+    sessionId: string,
+    callback: EventCallback,
+    directory?: string
   ): Promise<() => void> {
     const client = this.ensureClient();
     const abortController = new AbortController();
     const childSessionIds = new Set<string>();
-    
+
     const eventResult = await client.event.subscribe({
-      query: { directory: this.directory },
+      query: { directory: directory || this.directory },
     });
 
     const processEvents = async () => {
@@ -233,12 +271,12 @@ export class OpencodeWrapper {
   }
 
   /** 执行命令 */
-  async executeCommand(sessionId: string, command: string, args = ''): Promise<boolean> {
+  async executeCommand(sessionId: string, command: string, args = '', directory?: string): Promise<boolean> {
     try {
       const client = this.ensureClient();
       await client.session.command({
         path: { id: sessionId },
-        query: { directory: this.directory },
+        query: { directory: directory || this.directory },
         body: {
           command,
           arguments: args,
@@ -251,13 +289,13 @@ export class OpencodeWrapper {
     }
   }
 
-  async executeShell(sessionId: string, command: string, model?: { providerID: string; modelID: string }): Promise<boolean> {
+  async executeShell(sessionId: string, command: string, model?: { providerID: string; modelID: string }, directory?: string): Promise<boolean> {
     try {
       const client = this.ensureClient();
       logger.info('OpenCode executeShell', { sessionId, command: command.slice(0, 50), model });
       await client.session.shell({
         path: { id: sessionId },
-        query: { directory: this.directory },
+        query: { directory: directory || this.directory },
         body: {
           command,
           agent: 'build',
@@ -271,12 +309,12 @@ export class OpencodeWrapper {
     }
   }
 
-  async summarizeSession(sessionId: string, model?: { providerID: string; modelID: string }): Promise<boolean> {
+  async summarizeSession(sessionId: string, model?: { providerID: string; modelID: string }, directory?: string): Promise<boolean> {
     try {
       const client = this.ensureClient();
       await client.session.summarize({
         path: { id: sessionId },
-        query: { directory: this.directory },
+        query: { directory: directory || this.directory },
         body: model,
       });
       return true;
@@ -300,17 +338,17 @@ export class OpencodeWrapper {
     }
   }
 
-  /** 获取可用模型列表 */
-  async listModels(): Promise<Array<{ id: string; name: string; providerId: string }>> {
+  /** 获取可用模型列表（按服务商分组） */
+  async listModels(): Promise<Array<{ id: string; name: string; providerId: string; providerName: string }>> {
     try {
       const client = this.ensureClient();
       const response = await client.config.providers({
         query: { directory: this.directory },
       });
-      
-      const models: Array<{ id: string; name: string; providerId: string }> = [];
-      const data = response.data as { providers?: Array<{ id: string; models?: Record<string, { id: string; name: string }> }> };
-      
+
+      const models: Array<{ id: string; name: string; providerId: string; providerName: string }> = [];
+      const data = response.data as { providers?: Array<{ id: string; name: string; models?: Record<string, { id: string; name: string }> }> };
+
       if (data?.providers) {
         for (const provider of data.providers) {
           if (provider.models) {
@@ -319,15 +357,56 @@ export class OpencodeWrapper {
                 id: `${provider.id}/${model.id}`,
                 name: model.name,
                 providerId: provider.id,
+                providerName: provider.name || provider.id,
               });
             }
           }
         }
       }
-      
+
       return models;
     } catch (error) {
       logger.error('获取模型列表失败', error);
+      return [];
+    }
+  }
+
+  /** 获取所有会话列表 */
+  async listSessions(): Promise<Array<{
+    id: string;
+    title: string;
+    directory: string;
+    createdAt: number;
+    updatedAt: number;
+    parentID?: string;
+  }>> {
+    try {
+      const client = this.ensureClient();
+      const response = await client.session.list({
+        query: { directory: this.directory },
+      });
+
+      const sessions = (response.data ?? []) as Array<{
+        id: string;
+        title: string;
+        directory: string;
+        parentID?: string;
+        time: { created: number; updated: number };
+      }>;
+
+      return sessions
+        .filter(s => !s.parentID) // 只显示主会话，不显示子会话
+        .map(s => ({
+          id: s.id,
+          title: s.title || '(无标题)',
+          directory: s.directory,
+          createdAt: s.time.created,
+          updatedAt: s.time.updated,
+          parentID: s.parentID,
+        }))
+        .sort((a, b) => b.updatedAt - a.updatedAt); // 最近更新的排前面
+    } catch (error) {
+      logger.error('获取会话列表失败', error);
       return [];
     }
   }

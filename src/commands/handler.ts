@@ -88,6 +88,12 @@ export class CommandHandler {
           return this.handleAbort(context);
         case 'compact':
           return this.handleCompact(context);
+        case 'project':
+          return this.handleProject(parsed.args, context);
+        case 'sessions':
+          return this.handleSessions(parsed.args, context);
+        case 'myid':
+          return this.handleMyId(context);
         case 'whitelist_add':
           return this.handleWhitelistAdd(parsed.args, context);
         case 'whitelist_remove':
@@ -105,20 +111,25 @@ export class CommandHandler {
     }
   }
 
-  getSession(chatId: string): SessionState {
-    let session = this.sessions.get(chatId);
+  private sessionKey(chatId: string, userId: string): string {
+    return `${chatId}:${userId}`;
+  }
+
+  getSession(chatId: string, userId: string): SessionState {
+    const key = this.sessionKey(chatId, userId);
+    let session = this.sessions.get(key);
     if (!session) {
       session = {
         projectPath: this.config.defaultProjectPath,
         model: this.config.defaultModel,
       };
-      this.sessions.set(chatId, session);
+      this.sessions.set(key, session);
     }
     return session;
   }
 
-  setSessionId(chatId: string, sessionId: string): void {
-    const session = this.getSession(chatId);
+  setSessionId(chatId: string, userId: string, sessionId: string): void {
+    const session = this.getSession(chatId, userId);
     session.sessionId = sessionId;
   }
 
@@ -133,17 +144,30 @@ export class CommandHandler {
   }
 
   private async handleNew(args: string[], context: CommandContext): Promise<CommandResult> {
+    const session = this.getSession(context.chatId, context.userId);
+    session.sessionId = undefined;
+
+    const projectName = this.config.projects.find(p => p.path === session.projectPath)?.name || session.projectPath;
+    await this.sendMessage(context.chatId, formatCommandSuccess(`已在项目 ${projectName} 中创建新会话`));
+    return { handled: true };
+  }
+
+  private async handleProject(args: string[], context: CommandContext): Promise<CommandResult> {
     if (this.config.projects.length === 0) {
       await this.sendMessage(context.chatId, formatCommandError('没有配置可用项目'));
       return { handled: true };
     }
 
+    const session = this.getSession(context.chatId, context.userId);
+
     if (args.length === 0) {
-      let message = '**可用项目：**\n\n';
+      let message = '**项目列表：**\n\n';
       this.config.projects.forEach((project, index) => {
-        message += `${index + 1}. ${project.name}\n   \`${project.path}\`\n\n`;
+        const isCurrent = project.path === session.projectPath;
+        const marker = isCurrent ? ' ✓' : '';
+        message += `${index + 1}. ${project.name}${marker}\n   \`${project.path}\`\n\n`;
       });
-      message += '使用 `/new <编号>` 选择项目';
+      message += '使用 `/project <编号>` 切换项目';
       await this.sendMessage(context.chatId, message);
       return { handled: true };
     }
@@ -155,70 +179,95 @@ export class CommandHandler {
     }
 
     const project = this.config.projects[index]!;
-    const session = this.getSession(context.chatId);
+    if (project.path === session.projectPath) {
+      await this.sendMessage(context.chatId, `已经在项目 ${project.name} 中`);
+      return { handled: true };
+    }
+
     session.projectPath = project.path;
     session.sessionId = undefined;
 
-    await this.sendMessage(context.chatId, formatCommandSuccess(`已切换到项目: ${project.name}`));
+    await this.sendMessage(context.chatId, formatCommandSuccess(`已切换到项目: ${project.name}\n下次发消息将在新目录下创建会话`));
     return { handled: true };
   }
 
   private async handleModel(args: string[], context: CommandContext): Promise<CommandResult> {
-    if (args.length === 0) {
-      const models = await this.agent.listModels();
-      let message = '**可用模型：**\n\n';
-      
-      const filtered = this.config.availableModels.length > 0
-        ? models.filter(m => this.config.availableModels.some(am => am.id === m.id))
-        : models.slice(0, 20);
-      
-      filtered.forEach((model, index) => {
-        message += `${index + 1}. ${model.name}\n   \`${model.id}\`\n\n`;
-      });
-      message += '使用 `/model <编号>` 选择模型';
-      await this.sendMessage(context.chatId, message);
-      return { handled: true };
-    }
-
     const models = await this.agent.listModels();
     const filtered = this.config.availableModels.length > 0
       ? models.filter(m => this.config.availableModels.some(am => am.id === m.id))
       : models;
 
-    let selectedModel: typeof models[0] | undefined;
-    
+    if (args.length === 0) {
+      // 按服务商分组展示
+      const session = this.getSession(context.chatId, context.userId);
+      const currentModel = session.model;
+
+      const grouped = new Map<string, typeof filtered>();
+      for (const model of filtered) {
+        const key = model.provider || 'other';
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(model);
+      }
+
+      let message = '**可用模型：**\n\n';
+      let globalIndex = 0;
+
+      for (const [providerId, providerModels] of grouped) {
+        const providerName = providerModels[0]?.providerName || providerId;
+        message += `**${providerName}**\n`;
+        for (const model of providerModels) {
+          globalIndex++;
+          const isCurrent = currentModel === model.id;
+          const marker = isCurrent ? ' ✓' : '';
+          message += `  ${globalIndex}. ${model.name}${marker}\n       \`${model.id}\`\n`;
+        }
+        message += '\n';
+      }
+
+      message += `当前模型: \`${currentModel || '默认'}\`\n`;
+      message += '使用 `/model <编号>` 切换模型';
+      await this.sendMessage(context.chatId, message);
+      return { handled: true };
+    }
+
+    let selectedModel: typeof filtered[0] | undefined;
+
     const index = parseInt(args[0]!, 10) - 1;
     if (!isNaN(index) && index >= 0 && index < filtered.length) {
       selectedModel = filtered[index];
     } else {
-      selectedModel = filtered.find(m => m.id === args[0] || m.name === args[0]);
+      // 支持通过模型 ID 或名称选择
+      const query = args.join(' ').toLowerCase();
+      selectedModel = filtered.find(m =>
+        m.id.toLowerCase() === query || m.name.toLowerCase() === query
+      );
     }
 
     if (!selectedModel) {
-      await this.sendMessage(context.chatId, formatCommandError('无效的模型'));
+      await this.sendMessage(context.chatId, formatCommandError('无效的模型，使用 `/model` 查看可用列表'));
       return { handled: true };
     }
 
-    const session = this.getSession(context.chatId);
+    const session = this.getSession(context.chatId, context.userId);
     session.model = selectedModel.id;
 
     if (session.sessionId) {
       await this.agent.switchModel(session.sessionId, selectedModel.id);
     }
 
-    await this.sendMessage(context.chatId, formatCommandSuccess(`已切换到模型: ${selectedModel.name}`));
+    await this.sendMessage(context.chatId, formatCommandSuccess(`已切换到模型: ${selectedModel.name}\n\`${selectedModel.id}\``));
     return { handled: true };
   }
 
   private async handleClear(context: CommandContext): Promise<CommandResult> {
-    const session = this.getSession(context.chatId);
+    const session = this.getSession(context.chatId, context.userId);
     session.sessionId = undefined;
     await this.sendMessage(context.chatId, formatCommandSuccess('会话已清除，下次发消息将创建新会话'));
     return { handled: true };
   }
 
   private async handleStatus(context: CommandContext): Promise<CommandResult> {
-    const session = this.getSession(context.chatId);
+    const session = this.getSession(context.chatId, context.userId);
     let message = '**当前状态：**\n\n';
     message += `项目: \`${session.projectPath}\`\n`;
     message += `模型: \`${session.model || '默认'}\`\n`;
@@ -228,7 +277,7 @@ export class CommandHandler {
   }
 
   private async handleAbort(context: CommandContext): Promise<CommandResult> {
-    const session = this.getSession(context.chatId);
+    const session = this.getSession(context.chatId, context.userId);
     if (!session.sessionId) {
       await this.sendMessage(context.chatId, formatCommandError('没有活动的会话'));
       return { handled: true };
@@ -244,7 +293,7 @@ export class CommandHandler {
   }
 
   private async handleCompact(context: CommandContext): Promise<CommandResult> {
-    const session = this.getSession(context.chatId);
+    const session = this.getSession(context.chatId, context.userId);
     if (!session.sessionId) {
       await this.sendMessage(context.chatId, formatCommandError('没有活动的会话'));
       return { handled: true };
@@ -256,6 +305,63 @@ export class CommandHandler {
     } else {
       await this.sendMessage(context.chatId, formatCommandError('压缩失败'));
     }
+    return { handled: true };
+  }
+
+  private async handleSessions(args: string[], context: CommandContext): Promise<CommandResult> {
+    const sessions = await this.agent.listSessions();
+
+    if (sessions.length === 0) {
+      await this.sendMessage(context.chatId, '**暂无历史会话**\n\n发送消息即可自动创建新会话');
+      return { handled: true };
+    }
+
+    if (args.length === 0) {
+      // 列出所有会话
+      const currentSession = this.getSession(context.chatId, context.userId);
+      let message = '**历史会话：**\n\n';
+
+      sessions.forEach((session, index) => {
+        const isCurrent = currentSession.sessionId === session.id;
+        const marker = isCurrent ? ' ✓' : '';
+        const updatedTime = new Date(session.updatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+        const title = session.title.length > 40 ? session.title.slice(0, 40) + '...' : session.title;
+        message += `${index + 1}. ${title}${marker}\n   ${updatedTime}  \`${session.id.slice(0, 8)}...\`\n\n`;
+      });
+
+      message += '使用 `/sessions <编号>` 切换会话';
+      await this.sendMessage(context.chatId, message);
+      return { handled: true };
+    }
+
+    // 切换到指定会话
+    const index = parseInt(args[0]!, 10) - 1;
+    if (isNaN(index) || index < 0 || index >= sessions.length) {
+      await this.sendMessage(context.chatId, formatCommandError('无效的会话编号'));
+      return { handled: true };
+    }
+
+    const target = sessions[index]!;
+    const session = this.getSession(context.chatId, context.userId);
+
+    // 更新当前聊天绑定的 sessionId
+    session.sessionId = target.id;
+    session.projectPath = target.directory || session.projectPath;
+
+    // 为已有会话建立事件订阅
+    await this.agent.switchSession(target.id, session.projectPath, session.model);
+
+    const title = target.title.length > 30 ? target.title.slice(0, 30) + '...' : target.title;
+    await this.sendMessage(context.chatId, formatCommandSuccess(`已切换到会话: ${title}\n\`${target.id.slice(0, 8)}...\``));
+    return { handled: true };
+  }
+
+  private async handleMyId(context: CommandContext): Promise<CommandResult> {
+    let message = '**你的飞书信息：**\n\n';
+    message += `用户 ID: \`${context.userId}\`\n`;
+    message += `聊天 ID: \`${context.chatId}\`\n\n`;
+    message += '将用户 ID 填入 config.toml 的 `notify_user_id` 可接收启动通知';
+    await this.sendMessage(context.chatId, message);
     return { handled: true };
   }
 
